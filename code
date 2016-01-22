@@ -1,0 +1,1982 @@
+//#include "Header.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <MALLOC.H>
+
+
+
+#define MAXLENTH 2048
+#define MAXNUM 512
+#define IDLENGTH 126
+#define MAXVARTABLENUM 512
+#define SIYUANSHI 10
+#define MAXSIYUANSHI 500
+
+//语法节点数据结构
+typedef struct __TreeNode TreeNode, *pTreeNode;
+struct __TreeNode
+{
+    //int lineno;
+    char nodestr[IDLENGTH];	//保存标识符的名称，便于在语法中显示
+    char vartype[IDLENGTH];	//用于标明变量类型int char float
+    char rettype[IDLENGTH]; //函数返回类型void int char float
+};
+
+//单词
+typedef enum{
+    //关键字           
+    IF,ELSE,WHILE,RETURN,VOID,INT,FLOAT,DOUBLE,CHAR,CONST,SWITCH,CASE,BREAK,DO,FOR,
+        //运算符 + - * /  =  <  <=  >  >= ! !=  == ++ -- 
+        PLUS,MINUS,STAR,SLASH, ASSIGN,LT,LTEQ,GT,GTEQ,NEG,NEQ,EQ,PLUS_2,MINUS_2,
+        //界符 ;  ,  (  )  [  ]  {  }   
+        SEMI,COMMA,LPAREN,RPAREN,LSQUAR,RSQUAR,LBRACE,RBRACE,
+        COMMENT,   //注释
+        ID,                             //标识符
+        NUMBER,                         //数字常量
+        NONTOKEN,ERROR,ENDFILE  // 其它        
+} TokenType;
+
+//缓存单词
+typedef enum{
+    //运算符 + - * /  =  <  <=  >  >=  !=  == … 
+    INPLUS,INMINUS,INSTAR,INSLASH,INASSIGN,INLT,INLTEQ,INGT,INGTEQ,INNEQ,INEQ,
+        //界符 ;  ,  (  )  [  ]  {  }  /*  */
+        INSEMI,INCOMMA,INLPAREN,INRPAREN,INLSQUAR,INRSQUAR,INLBRACE,INRBRACE,
+        INLCOMMENT,INRCOMMENT,
+        INID,                           //标识符
+        INNUM,                  //数字常量
+        START,DONE
+} scanState;
+
+//15个保留字
+struct {
+    char *str;
+    TokenType tok;
+}reservedword[20]=
+{
+    {"if",IF},{"else",ELSE},{"while",WHILE},{"return",RETURN},{"void",VOID}, //5
+    {"int",INT},{"float",FLOAT},{"double",DOUBLE},{"char",CHAR},{"const",CONST}, //5
+    {"switch",SWITCH},{"case",CASE},{"break",BREAK},{"do",DO},{"for",FOR} //5
+};
+
+//单词符号的数据结构设计
+typedef struct 
+{
+    char str[MAXNUM]; //单词字符串
+    TokenType ttype; //单词的类型
+    int linenum; //所在行号信息
+}Token;
+
+//单词表
+typedef struct  
+{
+    Token list[MAXNUM]; //存放单词的列表
+    int index;//单词索引
+    int realNum;//实际单词数量
+}TokenTable;
+
+//存储输入缓存字符串
+typedef struct  
+{
+    char srcBuf[MAXLENTH]; //存储输入内容
+    int index; //单个字符索引
+    int realLenth; //缓冲区实际长度
+}SrcBuf;
+
+//定义符号表元素结构
+typedef struct
+{
+    char name[IDLENGTH]; //符号字符串
+    char type[IDLENGTH]; //符号类型
+    int  VarAdd; //符号地址
+}_Vartable;
+
+typedef struct
+{
+    char op[SIYUANSHI];
+    char oper1[SIYUANSHI];
+    char oper2[SIYUANSHI];
+    char result[SIYUANSHI];
+    int id; //四元式编号
+}_Siyuanshi;
+
+int insertTable(char *name,char *type); //插入符号表
+int lookupTable(char *name,int *paddress); //查询符号表并且返回地址
+void setVarType(char *type);//设置符号类型
+void showVarTabel(); //显示符号表
+void show_siyuanshi(); //显示四元式列表
+void code();//语法分析入口程序 
+Token NextToken(); //获取下一个token
+char * newTemp(); //生成四元式中间变量
+char * newSpace(); //为字符串分配存储空间
+void emit(char * op,char * oper1,char *oper2,char *result); //生成一个四元式
+void backFill(int p,int t); //回填
+int ergeFour(int p1,int p2); //合并p1和p2
+void asmcode(); //生成汇编代码
+void asmHead(); //打印汇编代码头部
+void asmTail(); //打印汇编代码尾部
+int _match(TokenType expected); //匹配当前单词类型,并且读取下一个
+void _program(); 
+void _fun_decl(); //函数定义
+void _var_decl(); //变量定义
+void _param_list();    //生成参数列表
+void _compound_stmt(int *chain);//函数体
+char * _statement(int *chain); //函数体内语句序列
+char * _exp_stmt(int *chain); //表达式语句
+char * _express(int *chain); //具体表达式
+char * _simple_expr(int *chain); //简单表达式
+char * _additive_expr(int *chain); //算术表达式
+char * _term(int *chain); //算术项
+char * _factor(int *chain);//算术项中的因子项
+char * _if_stmt(int *chain); //if语句
+char * _while_stmt(int *chain); //while语句
+char * _for_stmt(int *chain); //for语句
+char * _return_stmt(int *chain); //return语句
+void TokenAnalysis(char *path);//读取源文件函数
+void Input(char *path);//获取一个单词
+Token getToken();
+char getNextChar();//取下一个字符
+void backChar(); //回退一个字符
+TokenType reservedlookup(char *str);//查找保留字
+void createLineNum(); //构造行号
+void parse();//语法分析入口程序
+Token getNextToken(); //获取下一个token
+void backToken();//退回一个token
+pTreeNode CreateNode(); //分配内存，创建一个节点
+pTreeNode program(); //构造语法
+void ParseError(); //语法分析错误提示
+pTreeNode fun_decl(); //函数定义
+pTreeNode var_decl(); //变量定义
+pTreeNode param_list();	//生成参数列表
+pTreeNode compound_stmt();//函数体
+pTreeNode statement(); //函数体内语句序列
+pTreeNode exp_stmt(); //表达式语句
+pTreeNode express(); //具体表达式
+pTreeNode simple_expr(); //简单表达式
+pTreeNode additive_expr(); //算术表达式
+pTreeNode term(); //算术项
+pTreeNode factor();//算术项中的因子项
+pTreeNode if_stmt(); //if语句
+pTreeNode while_stmt(); //while语句
+pTreeNode for_stmt(); //for语句
+pTreeNode return_stmt(); //return语句
+
+//单词类型
+char type[50][123]={
+    //关键字           
+    "IF","ELSE","WHILE","RETURN","VOID","INT","FLOAT","DOUBLE","CHAR","CONST","SWITCH","CASE","BREAK","DO","FOR",
+        //运算符 + - * /  =  <  <=  >  >= ! !=  == ++ --  
+        "PLUS","MINUS","STAR","SLASH","ASSIGN","LT","LTEQ","GT","GTEQ","NEG","NEQ","EQ","PLUS_2","MINUS_2",
+        //界符 ;  ,  (  )  [  ]  {  }  /*  */
+        "SEMI","COMMA","LPAREN","RPAREN","LSQUAR","RSQUAR","LBRACE","RBRACE",
+        "COMMENT",   //注释
+        "ID",                             //标识符
+        "NUMBER",                         //数字常量
+        "NONTOKEN","ERROR","ENDFILE"  // 其它        
+};
+
+Token curtoken;//当前字符
+pTreeNode root=(pTreeNode)malloc(sizeof(TreeNode));//语法根
+
+int lineNum[MAXLENTH]={0};
+_Vartable vartable[MAXVARTABLENUM]; //存储符号
+int Varindex=0;//符号的索引
+int VarNum=0; //总的符号数
+int labelp=0; //标号序号
+int datap=0; //符号地址
+_Siyuanshi siyuanshi[MAXSIYUANSHI];//四元式
+int siyuanshi_index=0;// 四元式的索引
+int result_index=0; //四元式中间结果标号
+char temp[SIYUANSHI]; // 字符串复制中间变量
+int oper_index=0;// 操作数的序号
+int temp_index=1;//中间变量标号
+int nextq=0;
+int ntc,nfc,while_s,while_e,while_t,for_s,for_e,for_t;
+char TempTable[MAXSIYUANSHI][10];
+
+TokenTable Table;
+SrcBuf Inbuf;
+
+FILE *fp1,*fp2,*fp3;
+
+
+void TokenAnalysis(char *path)
+{
+    //初始化单词表
+    Table.index=0;//单词索引号
+    Table.realNum=0;//表内实际单词数量
+    Table.list[Table.index].ttype=NONTOKEN;//单词初始类型为NONTOKEN
+
+    //初始化缓冲区
+    Inbuf.index=0;//单个字符索引
+    Inbuf.realLenth=0;//缓冲区实际长度
+    
+    Input(path);//读入源程序
+    createLineNum();//行号存入行号数组
+
+    printf("欲编译的C程序源代码：\n%s\n",Inbuf.srcBuf);
+    printf("C程序源代码共计%d行,%d个字符\n", lineNum[Inbuf.realLenth-1],Inbuf.realLenth);
+
+     
+    char ch=' ';
+    while (Inbuf.index < Inbuf.realLenth)
+    {
+    	//预处理：为读取单词跳过空格、换行符和制表符，同时读取完毕后置终结标记EndTok到单词表
+        do
+        {
+            ch=getNextChar();//取下一个字符
+            //缓冲区读取完毕，置终结标记EndTok到单词表
+            if (Inbuf.index > Inbuf.realLenth || ch==EOF)
+            {
+                Token EndTok;
+                EndTok.ttype=ENDFILE;
+                EndTok.str[0]='\0';
+                EndTok.linenum=lineNum[Inbuf.index];
+
+                Table.list[Table.index]=EndTok;
+                Table.index++;
+                Table.realNum++;
+                printf("词法分析完毕\n\n");
+                return;
+            }
+        }while (ch==' '||ch=='\n'||ch=='\t'); //遇到空格、换行符或制表符继续循环
+		
+        backChar();//缓冲区字符索引Inbuf.index回退一个字符
+        Token tok=getToken(); //将单词放入tok
+        //将非注释单词添加到单词表中
+        if (tok.ttype!=COMMENT)
+        { 
+            Table.list[Table.index]=tok;
+            Table.index++;
+            Table.realNum++;
+        }      
+    }
+      
+    return;
+}
+
+//读取源文件函数
+void Input(char *path)
+{
+    int count=0;
+    if (strlen(path) == 0)
+    {
+        printf("Path Error\n");
+        return ;
+    }
+    FILE *fp=fopen(path,"r");
+    if (fp==NULL)
+    {
+        printf("File:%s Open Error\n ");
+        exit(-1);
+    }
+    while(!feof(fp))
+    {
+        count=fread(Inbuf.srcBuf,sizeof(char),MAXLENTH,fp);
+        if (ferror(fp))
+        {
+            printf("Reading Error\n");
+            exit(0);
+        }
+        Inbuf.realLenth += count;
+    }
+    if(fclose(fp)!=0)
+    {
+        printf("File Close Error\n");
+        exit(0);
+    }
+    return;
+}
+
+void createLineNum() //构造行号
+{
+    int i=0;
+    int temp=1;
+    if (Inbuf.realLenth<=0)
+    {
+        return;
+    }
+    for (i=0;i<Inbuf.realLenth;i++)
+    {
+        lineNum[i] = temp;
+        if ('\n' == Inbuf.srcBuf[i])
+        {
+            temp++;
+            lineNum[i] = temp;            
+        }
+    }
+
+    return;
+}
+
+
+//获取一个单词
+Token getToken()
+{
+    char ch;     
+    char str[MAXNUM];  
+    int i=0;
+    Token tok;
+    TokenType tokType;
+    scanState state=START;
+
+	//对单词进行判断
+    while(state!=DONE)
+    {
+        ch=getNextChar();//取下一个字符
+        switch(state) 
+        {
+        case START: 
+            if(isalpha(ch)) state=INID;//isalpha，isdigit为<ctype.h>库函数
+            else if(isdigit(ch)) state=INNUM;
+            else if(ch=='<') state=INLTEQ;
+            else if(ch=='>') state=INGTEQ;
+            else if(ch=='=') state=INASSIGN;
+            else if(ch=='!') state=INNEQ;
+
+            else if(ch=='+') state=INPLUS;
+            else if(ch=='-') state=INMINUS;           
+            else if(ch=='/') state=INSLASH; 
+            
+            else if(ch=='*') { state=DONE; tokType=STAR;}//state=INSTAR; 
+            else if(ch==';') { state=DONE; tokType=SEMI;}//state=INSEMI; 
+            else if(ch==',') { state=DONE; tokType=COMMA;}//state=INCOMMA; 
+            else if(ch=='(') { state=DONE; tokType=LPAREN;}//state=INLPAREN; 
+            else if(ch==')') { state=DONE; tokType=RPAREN;}//state=INRPAREN; 
+            else if(ch=='[') { state=DONE; tokType=LSQUAR;}//state=INLSQUAR; 
+            else if(ch==']') { state=DONE; tokType=RSQUAR;}//state=INRSQUAR; 
+            else if(ch=='{') { state=DONE; tokType=LBRACE;}//state=INLBRACE; 
+            else if(ch=='}') { state=DONE; tokType=RBRACE;}//state=INRBRACE; 
+            else
+            {
+                printf("词法分析错误，在:%d 行 %c\n",lineNum[Inbuf.index]-1,ch);
+                exit(0);
+            }
+            break;
+        case INID: 
+            if(!isalpha(ch) && !isdigit(ch)) 
+            {                   
+                backChar();
+                ch='\0';
+                tokType=reservedlookup(str); //查找保留字
+                state=DONE; //DONE状态                                  
+            }
+            break;
+        case INNUM:
+            if(!isdigit(ch))
+            {                
+                backChar();
+                ch='\0';
+                tokType=NUMBER;
+                state=DONE;
+            }
+            break;
+        case INLTEQ: //<       
+            if (ch=='=')
+            {
+                state=DONE;
+                tokType=LTEQ;
+            }
+            else
+            {
+                backChar();
+                ch='\0';
+                state=DONE;
+                tokType=LT;
+            }            
+            break;
+        case INGTEQ: //>          
+            if (ch=='=')
+            {
+                state=DONE;
+                tokType=GTEQ;
+            }
+            else
+            {
+                backChar();
+                ch='\0';
+                state=DONE;
+                tokType=GT;
+            }
+            break;
+        case INASSIGN: // =        
+            if (ch=='=')
+            {
+                state=DONE;
+                tokType=EQ;
+            }
+            else
+            {
+                backChar();
+                ch='\0';
+                state=DONE;
+                tokType=ASSIGN;
+            }
+            break;
+        case INNEQ: //!           
+            if (ch=='=')
+            {
+                state=DONE;
+                tokType=NEQ;
+            } 
+            else
+            {
+                backChar(); 
+                ch='\0';
+                state=DONE;
+                tokType=NEG; //取反negative
+            }
+            break;
+        case INPLUS: //+           
+            if (ch=='+') // ++
+            {
+                state=DONE;
+                tokType=PLUS_2;
+            }
+            else
+            {       
+                backChar();
+                ch='\0';
+                state=DONE;
+                tokType=PLUS;
+            }
+            break;
+        case INMINUS: //-
+            if (ch=='-')
+            {
+                state=DONE;
+                tokType=MINUS_2;
+            }
+            else
+            {
+                backChar();
+                ch='\0';
+                state=DONE;
+                tokType=MINUS;
+            }           
+            break;
+        case INSTAR://*
+            state=DONE;
+            tokType=STAR;
+            break;
+        case INSLASH:// / 跳过注释       
+            if (ch=='*')
+            {
+                do 
+                {
+                    ch=getNextChar();
+                    if (ch=='*' && getNextChar()=='/')
+                    {
+                        break;
+                    }
+                } while (1);
+                ch='\0';
+                state=DONE;                
+               // str[i--]='\0'; //过滤注释，不再记录 '/'
+                str[0]='\0';
+                tok.ttype=COMMENT;
+                return tok;
+            } 
+            else if(ch=='/')
+            {
+                while (ch!='\n')
+                {
+                    ch=getNextChar();
+                }
+                backChar();
+                state=DONE;
+                ch='\0';
+                str[i--]='\0'; //过滤注释，不再记录 '/'
+                str[0]='\0';
+                tok.ttype=COMMENT;
+                return tok;
+            }
+            else
+            {
+                backChar();
+                ch='\0';
+                state=DONE;
+                tokType=SLASH;
+            }
+            break;
+    
+     } //end_switch
+    str[i++]=ch; //记录当前正在判断的单词符号串
+    str[i]='\0';
+    } //end_while
+   
+    tok.ttype = tokType; 
+    str[i]='\0';
+    //tok.str = str;
+    strcpy(tok.str,str);
+    tok.linenum=lineNum[Inbuf.index-1];
+   
+    return tok;
+}
+
+char getNextChar() //取下一个字符
+{
+    char ch=EOF;
+    if (Inbuf.index > Inbuf.realLenth)
+    {
+        printf("GetNextChar Error\n");
+        //exit(0);
+        return ch;
+    }
+    ch=Inbuf.srcBuf[Inbuf.index];
+    Inbuf.index++;
+    
+    return ch;
+}
+
+void backChar() //回退一个字符
+{
+    if (Inbuf.index-1 >= 0)
+    {
+        Inbuf.index--;
+        return;
+    }
+    printf("Can't Backward Char\n");
+    return;
+}
+
+TokenType reservedlookup(char *str) //查找保留字
+{
+    int i=0;
+    for (i=0;i<15;i++)
+    {
+        if (strcmp(str,reservedword[i].str) == 0)
+        {
+            return reservedword[i].tok;
+        }
+    }
+    return ID;
+}
+
+//语法分析入口程序。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。
+void parse()
+{
+    //初始化单词表索引
+    Table.index=0;
+   // root->lineno=0; 
+	printf("\t行号\t单词\t结果\n");
+    curtoken = getNextToken();		//取得第一个token	   
+    
+    root = program();//递归下降分析！构建语法，并返回根节点
+	//printf("root=%s",&root->rettype);
+
+    printf("\n****************语法分析成功!********************\n\n");
+}
+int match(TokenType expected) //匹配当前单词类型,并且读取下一个
+{	
+    if(curtoken.ttype == expected) 
+    {
+        curtoken=getNextToken();       
+        return 1;
+    }
+    else
+    {
+        ParseError();
+        return 0;
+    }
+}
+//program→ { fun-declaration | var-declaration } 
+//只有一个主程序没有另外的函数声明
+//改为 program→ { fun-declaration }
+pTreeNode  program() 
+{    
+    pTreeNode programNode,funNode;  
+    //programNode=root;
+    programNode=funNode=fun_decl(); //函数头    
+    return  programNode;
+}
+
+//函数定义fun-declaration→ '(' int | void ')' ID( params ) compound-stmt
+pTreeNode  fun_decl() 
+{
+    pTreeNode retnode;  
+    retnode=CreateNode();
+    while(curtoken.ttype!=LPAREN) //(
+    {  
+        switch(curtoken.ttype)
+        {
+        case INT: //函数返回类型int
+        case VOID: //函数返回类型void	
+            //记录函数返回类型    in或void类型时执行          
+            strcpy(retnode->rettype,curtoken.str);//把字符串赋给retnode做为函数返回类型
+            match(curtoken.ttype);	//比对单词类型并获取下一个字符	
+            break; 
+        case ID: 	
+            strcpy(retnode->nodestr,curtoken.str);//把字符串的值赋给retnode当作标识符
+            match(ID);
+            break;  
+        default:	
+            ParseError(); 			 
+            break;
+        }	
+    }
+    match(LPAREN); // (
+    if(curtoken.ttype != RPAREN)  
+    {
+        pTreeNode paramsNode = param_list();	//生成参数列表	
+    }
+    match(RPAREN); // )
+    pTreeNode stmtNode = compound_stmt();//函数体 
+	 retnode=stmtNode;
+    return retnode;
+}
+
+// params → int ID { , int ID } | void | empty
+pTreeNode param_list()	//生成参数列表
+{
+    pTreeNode retnode, nextnode, curnode;  //next,cur中间变量
+    retnode = curnode=CreateNode();
+    
+    while (curtoken.ttype!=RPAREN) //)
+    {
+        switch (curtoken.ttype)
+        {
+        case INT:
+            match(INT);
+            break;
+        case DOUBLE:
+            match(DOUBLE);
+            break;
+        case FLOAT:
+            match(FLOAT);
+            break;
+        case CHAR:
+            match(CHAR);
+            break;
+        case VOID:
+            match(VOID);
+            break;
+   	    case ID:                                                                                                                                  
+            nextnode=CreateNode();
+            strcpy(nextnode->nodestr,curtoken.str);     
+            curnode = nextnode;
+			match(ID);
+            break;
+        case  COMMA: // 定义多个变量		
+            match(COMMA);	
+            break;
+        default:	
+            ParseError(); 		
+            break;
+        }
+    }
+    return retnode;
+}
+
+//compound-stmt→ { { var-declaration } { statement } }
+pTreeNode compound_stmt() //函数体
+{
+    pTreeNode compoundNode,varNode,stmtNode,curNode; //定义多个中间变量
+    curNode=CreateNode();
+	compoundNode=curNode;
+    match(LBRACE); // {
+   if (curtoken.ttype==INT || curtoken.ttype==DOUBLE || curtoken.ttype==CHAR)
+   {
+        curNode=varNode=var_decl(); //函数体内变量声明
+   }
+    stmtNode=statement();   
+    while (stmtNode!=NULL && curtoken.ttype!=RBRACE && curtoken.ttype!=ENDFILE)
+    {                                       //}                    
+        stmtNode=statement();
+        curNode=stmtNode;
+    }   
+    match(RBRACE); // }
+   
+    return compoundNode;
+}
+
+//var-declaration→ int ID { , ID }    //可以声明多个变量
+pTreeNode  var_decl() {
+    pTreeNode retnode, nextnode, curnode;     
+    retnode = NULL;
+    while(curtoken.ttype!=SEMI) // ; 变量声明语句结束 
+    { 
+        retnode = curnode=CreateNode();    
+        switch(curtoken.ttype) 
+        {
+        case INT:  
+            match(INT); 	
+            break;
+        case DOUBLE:  
+            match(DOUBLE); 	
+            break;
+        case FLOAT:  
+            match(FLOAT); 	
+            break;
+        case CHAR:  
+            match(CHAR); 	
+            break;
+        case ID:           
+            nextnode=CreateNode();
+            strcpy(nextnode->nodestr,curtoken.str);      
+            curnode = nextnode;
+            match( ID);		
+            break;
+        case  COMMA: //， 定义多个变量
+		
+            match( COMMA);	
+            break;     
+        default: 
+            ParseError();
+            break;
+        }
+    }
+    match( SEMI);//;	
+    return  retnode;
+}
+//statement→ expression-stmt∣compound-stmt ∣if-stmt ∣while-stmt | for-stmt | return-stmt
+pTreeNode statement() //函数体内语句序列
+{
+    pTreeNode expNode,comdNode,ifNode,whileNode,forNode,reNode,printfNode,scanfNode;
+    pTreeNode stmtNode=NULL;
+    
+    switch(curtoken.ttype)
+    {
+    case ID: //变量               往后执行
+    case NUMBER: //数字
+        expNode=exp_stmt();      //表达式语句
+        stmtNode=expNode;
+        break;
+    case IF:
+        ifNode=if_stmt();        //if语句
+        stmtNode=ifNode;
+        break;
+    case WHILE:
+        whileNode=while_stmt();     //while语句  
+        stmtNode=whileNode;
+        break;
+    case FOR:
+        forNode=for_stmt();       //for语句
+        stmtNode=forNode;
+        break;
+    case RETURN:
+        reNode=return_stmt();      //return语句
+        stmtNode=reNode;
+        break;  
+    case LBRACE:                    //函数体｛
+        comdNode=compound_stmt();       
+        stmtNode=comdNode;
+        break;
+    //case PRINTF:
+     //    printfNode=printf_stmt();
+	//	 stmtNode=printfNode;
+	//	 break;
+	//case SCANF:
+	//	scanfNode=scanf_stmt();
+	//	stmtNode=scanfNode;
+	//	break;
+    default:
+        ParseError();
+        break;
+    }
+    
+    return stmtNode;
+}
+
+
+//printf-stmt→printf ("ID=%type\n",ID)
+/*pTreeNode printf_stmt()
+{
+	pTreeNode printfNode;
+	printfNode=CreateNode();
+	match(PRINTF);
+	match(LPAREN);
+	match(LSEMICOLON);
+	match(ID);
+	match(ASSIGN);
+	match(PERCENT);
+	  if(curtoken.ttype==F)
+    {
+        match(F);
+    }
+	else if(curtoken.ttype ==D)
+	{
+	   match(D);
+	}
+		else if(curtoken.ttype ==C)
+	{
+	   match(C);
+	}
+	else 
+	{
+		ParseError(); 
+	}
+	match(BACKSLASH);
+	match(N);
+	match(RSEMICOLON);
+	match(COMMA);
+	match(ID);
+	match(RPAREN);
+
+}*/
+
+
+
+//if-stmt→ if( expression ) statement [else statement]
+pTreeNode if_stmt() //if语句
+{
+    pTreeNode ifNode,expNode,comNode;
+    ifNode=CreateNode();
+    match(IF);
+    match(LPAREN); // (    
+    expNode=exp_stmt();//生成表达式节点
+    //只是if语句
+    match(RPAREN); // )
+    comNode=statement(); //if语句体
+	ifNode=comNode;
+    if (strcmp(curtoken.str,"else")==0) //如果包含else语句
+    {   
+        match(ELSE); //if else 语句
+        comNode=statement();
+		ifNode=comNode;
+    }      
+    return ifNode;
+}
+//while-stmt→ while( expression ) compound_stmt
+pTreeNode while_stmt() //while语句
+{
+    pTreeNode whileNode,expNode,comNode;
+    whileNode=CreateNode();
+    match(WHILE);
+    match(LPAREN);// (
+    expNode=exp_stmt();
+    match(RPAREN); // )
+    comNode=compound_stmt();
+	whileNode=comNode;
+
+    return whileNode;
+}
+//for-stmt→ for(expression;expression;expression) statement
+pTreeNode for_stmt() //for语句
+{
+    pTreeNode forNode,expNode,comNode;
+    match(FOR);
+    forNode=CreateNode();
+    match(LPAREN); // (
+    expNode=exp_stmt();
+    expNode=exp_stmt();   
+    expNode=exp_stmt();
+    match(RPAREN); // )
+    comNode=statement();
+	forNode=comNode;
+    return forNode;
+}
+//return-stmt→ return [ expression ] ;
+pTreeNode return_stmt() //return语句
+{
+    pTreeNode retNode,expNode;
+    retNode = CreateNode();
+    match(RETURN);
+    expNode=exp_stmt();
+	retNode=expNode;
+    return retNode;
+}
+//expression-stmt→ [ expression ] ;  []0或1次
+pTreeNode exp_stmt() //表达式语句
+{
+    pTreeNode expNode;
+    while(strcmp(curtoken.str,";")==0) //匹配空语句
+    {
+        match(SEMI);
+    }
+    expNode=express(); //表达式
+    if(curtoken.ttype==SEMI)
+    {
+        match(SEMI);
+    }
+	else if(curtoken.ttype == RPAREN)
+	{
+	
+	}
+	else 
+	{
+		ParseError(); 
+	} 
+//	if(curtoken.ttype!=SEMI) {ParseError(); } 
+/*	if(curtoken.ttype == LPAREN)
+    {
+        match(LPAREN);
+    }*/
+    return expNode;
+}
+//expression→ ID = expression | simple-expression
+pTreeNode express() //具体表达式
+{
+    pTreeNode expNode,newNode,childNode;
+    expNode=CreateNode();
+    childNode=CreateNode();
+    strcpy(childNode->nodestr,curtoken.str);// id 
+    if (curtoken.ttype==ID)
+    {
+        match(ID);
+    }    
+    if (curtoken.ttype == ASSIGN) // =
+    {
+        match(ASSIGN);//赋值语句
+        strcpy(expNode->nodestr,curtoken.str);// 0
+        newNode=express();
+    }
+    else
+    {
+        expNode=simple_expr();   
+    }
+    return expNode;    
+}
+//simple-expression→ additive-expression [ relop additive-expression ] 
+//relop → < | <= | > | >= | == | != 
+pTreeNode simple_expr() //简单表达式
+{
+    pTreeNode simpleNode,additiveNode;
+    simpleNode=CreateNode();
+    additiveNode=CreateNode();
+    simpleNode=additiveNode=additive_expr(); //生成算数表达式
+    switch(curtoken.ttype)
+    {
+    case LT: //<
+        strcpy(additiveNode->nodestr,curtoken.str);
+        //additiveNode->lineno=curtoken.linenum;
+        match(curtoken.ttype);
+        additiveNode=additive_expr();
+		simpleNode=additiveNode;
+        break;
+    case LTEQ:// <=
+        strcpy(additiveNode->nodestr,curtoken.str);
+      //  additiveNode->lineno=curtoken.linenum;
+        match(curtoken.ttype);
+        additiveNode=additive_expr();
+		simpleNode=additiveNode;
+        break;
+    case GT: // >
+        strcpy(additiveNode->nodestr,curtoken.str);
+      // additiveNode->lineno=curtoken.linenum;
+        match(curtoken.ttype);
+        additiveNode=additive_expr();
+		simpleNode=additiveNode;
+        break;
+    case GTEQ: // >=
+        strcpy(additiveNode->nodestr,curtoken.str);
+       // additiveNode->lineno=curtoken.linenum;
+        match(curtoken.ttype);
+        additiveNode=additive_expr();
+		simpleNode=additiveNode;
+        break;
+    case NEQ:// !=
+        strcpy(additiveNode->nodestr,curtoken.str);
+       // additiveNode->lineno=curtoken.linenum;
+        match(curtoken.ttype);
+        additiveNode=additive_expr();
+		simpleNode=additiveNode;
+        break;
+    case EQ:// ==
+        strcpy(additiveNode->nodestr,curtoken.str);
+       // additiveNode->lineno=curtoken.linenum;
+        match(curtoken.ttype);
+        additiveNode=additive_expr();
+		simpleNode=additiveNode;
+        break;
+    }
+    return simpleNode;
+}
+//additive-expression→ term [( + | - ) term ]
+pTreeNode additive_expr() //算术表达式
+{
+    pTreeNode additiveNode,termNode;
+    additiveNode=termNode=term();
+     
+    if (curtoken.ttype==PLUS) //+
+    {
+        additiveNode=CreateNode();
+        strcpy(additiveNode->nodestr,curtoken.str);
+       // additiveNode->lineno=curtoken.linenum;
+
+        match(curtoken.ttype);
+        termNode=term();
+		additiveNode=termNode;
+    } 
+    else if ( curtoken.ttype==MINUS) // -
+    {
+        additiveNode=CreateNode();
+        strcpy(additiveNode->nodestr,curtoken.str);
+      //  additiveNode->lineno=curtoken.linenum;
+        
+        match(curtoken.ttype);
+        termNode=term();
+		additiveNode=termNode;
+    }
+    return additiveNode;
+}
+//term→ factor [ ( * | / ) factor ]
+pTreeNode term() //算术项
+{
+    pTreeNode termNode,factorNode;
+    termNode=CreateNode();
+    termNode=factorNode=factor();
+    if (curtoken.ttype == STAR) // *
+    {
+        strcpy(termNode->nodestr,curtoken.str);
+       // termNode->lineno=curtoken.linenum;
+
+        match(curtoken.ttype);
+        factorNode=factor();
+		termNode=factorNode;
+    } 
+    else if ( curtoken.ttype == SLASH)// /
+    {
+        strcpy(termNode->nodestr,curtoken.str);
+        //termNode->lineno=curtoken.linenum;        
+        match(curtoken.ttype);
+        factorNode=factor();
+		termNode=factorNode;
+    }  
+    return termNode;
+}
+//factor→ ( expression )| ID | NUM
+pTreeNode factor() //算术项中的因子项
+{
+    pTreeNode factorNode,exprNode;
+    factorNode=exprNode=CreateNode();
+    switch(curtoken.ttype)
+    {
+    case LPAREN:
+        match(LPAREN);// (
+        exprNode=exp_stmt();        
+        match(RPAREN);// )
+        break;
+    case ID:
+        strcpy(factorNode->nodestr,curtoken.str);
+        match(curtoken.ttype);
+        break;
+    case NUMBER:       
+        strcpy(factorNode->nodestr,curtoken.str);
+        match(curtoken.ttype);
+        break;
+    }
+    return factorNode;
+}
+Token getNextToken() //获取下一个token
+{
+    Token tok;
+	int i;
+    if (Table.index < Table.realNum)
+    {   i=Table.index;
+	    Table.index++;
+
+        tok=Table.list[i];
+	
+		if(i>1&&Table.list[i-1].ttype==Table.list[i].ttype&&Table.list[i-1].ttype==COMMA||(Table.list[i-1].ttype==COMMA&&Table.list[i].ttype==INT)){
+			 ParseError();
+		}
+
+        else if (tok.ttype!=ENDFILE)
+
+        {
+				printf("\t%d\t%s\t%s\n",tok.linenum,tok.str,"分析通过");
+        }
+        return tok;
+    } 
+    else
+    {
+        tok.ttype=ENDFILE; 
+        return tok;
+    }
+}
+void backToken() //退回一个token
+{
+    if (Table.index-1>=0)
+    {
+        Table.index--;
+    }
+    return;
+}
+void ParseError() //语法分析错误提示
+{
+    int line_Num=0;
+    line_Num=Table.list[Table.index].linenum;
+	printf("\t%d\t%s\t%s\n", line_Num,curtoken.str,"不符合语法规范");
+    //printf("第 %d 行 %s 不符合语法规范\n",line_Num,curtoken.str);
+    exit(0);
+}
+pTreeNode CreateNode() //创建一个节点
+{
+    pTreeNode p;
+    p=(pTreeNode)malloc(sizeof(TreeNode));
+    if (p==NULL)
+    {
+        printf("内存分配失败\n");
+        exit(0);
+    }    
+    return p;
+}
+
+
+
+int insertTable(char *name,char *type) //插入符号表
+{
+    int i,es=0;
+    if (VarNum >= MAXVARTABLENUM)
+    {
+        printf("符号表容量太小，无法继续存储\n");
+        return 21;
+    }
+    for (i=VarNum-1;i==0;i--)
+    {
+
+        if (strcmp(vartable[i].name,name)==0)
+        {
+            es=22;  //22 表示变量重定义
+            break;
+        }
+    }
+    if (es>0) //出错/重定义→返回
+    {
+        return es;
+    }
+    strcpy(vartable[Varindex].name,name); //把变量存进符号表
+    setVarType(type);
+    vartable[Varindex].VarAdd=datap;
+    datap++; //地址增加
+    Varindex++; //符号的索引增加
+    VarNum++; //符号数量增加    
+    return es;
+}
+int lookupTable(char *name,int *paddress) //查询符号表并且返回地址
+{
+    int i,es=0;
+    for (i=0;i<VarNum;i++)
+    {
+        if (strcmp(vartable[i].name,name)==0)
+        {
+            *paddress=vartable[i].VarAdd;
+            return es;
+        }
+    }    
+    es=23; //变量没有声明
+    return es;
+}
+void setVarType(char *type) //设置符号类型
+{
+    strcpy(vartable[Varindex].type,type);
+    return ;
+}
+void showVarTabel() //显示符号表
+{
+    int i=0;
+    printf("序号\t名字\t类型\t地址\n");
+    for (i=0;i<VarNum;i++)
+    {
+        printf("%2d\t%s\t%s\t%2d\n",i+1,
+            vartable[i].name,vartable[i].type,vartable[i].VarAdd);
+    }    
+    return ;
+}
+
+void emit(char * op,char * oper1,char *oper2,char *result) //生成一个四元式
+{
+    strcpy(siyuanshi[siyuanshi_index].op,op);
+    strcpy(siyuanshi[siyuanshi_index].oper1,oper1);
+    strcpy(siyuanshi[siyuanshi_index].oper2,oper2);
+    strcpy(siyuanshi[siyuanshi_index].result,result);
+    siyuanshi[siyuanshi_index].id=siyuanshi_index+1;
+
+    siyuanshi_index ++; //四元式编号加1
+    nextq++;//四元式编号
+}
+
+void show_siyuanshi() //显示四元式列表
+{
+    int i=0;
+    for (i=0;i<siyuanshi_index;i++)
+    {
+        printf("%2d: (%s,%s,%s,%s)\n",siyuanshi[i].id,
+            siyuanshi[i].op,siyuanshi[i].oper1,
+            siyuanshi[i].oper2,siyuanshi[i].result);
+    }
+    return;
+}
+
+char *newTemp() //生成四元式中间变量T1，T2...
+{
+    char *temp=newSpace();
+    sprintf(temp,"T%d",temp_index);
+
+    strcpy(TempTable[temp_index],temp); //存入中间变量表
+    temp_index++;
+
+    return temp;
+}
+
+void backFill(int p,int t) //回填,讲p所链接的每个四元式的第二分量都回填t
+{    
+    int w,circle=p;
+    while(circle) //circle不为0的时候
+    {
+        w=atoi(siyuanshi[circle].oper1); //四元式第2分量内容
+       
+        sprintf(siyuanshi[circle].oper1,"%d",t);
+        circle=w; //w记录的是链条上下一个四元式，移动！circle=w=0
+    }
+    return;
+}
+/*
+int ergeFour(int p1,int p2) //合并p1和p2
+{
+    char circle,nResult;
+    if(p2==0)
+        nResult=p1;
+    else
+    {
+        nResult=circle=p2;
+        while(atoi(siyuanshi[circle].oper1)) //四元式第2个分量不为0
+        {
+            circle=atoi(siyuanshi[circle].oper1); 
+             
+            sprintf(siyuanshi[circle].oper1,"%s",p1);
+        }
+        //目的是用p1的值覆盖0
+    }
+    return nResult; //p2是头，p1覆盖0，接在p2后边
+}
+*/
+char * newSpace() //为字符串分配存储空间
+{
+    char * space=(char *)malloc(sizeof(char)*5);
+    if (space == NULL)
+    {
+        printf("字符串存储空间非配失败\n");
+        exit(0);
+    }
+    return space;
+}
+//入口程序
+void code()
+{
+    //初始化单词表索引
+    Table.index=0;
+    int i=0;    
+    curtoken = NextToken();      //取得第一个token       
+    
+    _program();//递规下降分析！
+    
+    printf("符号表：\n");
+    showVarTabel();
+    printf("\n*****************四元式如下：*******************\n");
+    show_siyuanshi();
+    printf("\n******************汇编代码生成成功!********************\n");
+    printf("汇编代码如下：\n");
+    asmcode();
+}
+// program→ { fun-declaration }
+void  _program() 
+{   
+    _fun_decl(); 
+    return;
+}
+//函数定义fun-declaration→ ( int | void ) ID( params ) compound-stmt
+void  _fun_decl() 
+{ 
+    int paddress;
+    int chain;
+    while(curtoken.ttype!=LPAREN) //(
+    {  
+        switch(curtoken.ttype)
+        {
+        case INT: //函数返回类型int
+        case VOID: //函数返回类型void           
+            _match(curtoken.ttype);      
+            break; 
+        case ID:              
+            if (lookupTable(curtoken.str,&paddress)!=0)
+            {
+                insertTable(curtoken.str,"FunDecl"); //将函数名存进符号表                
+            }
+            _match(ID);
+            break;  
+        default:    
+            ParseError();            
+            break;
+        }// end_switch  
+    }// end_while
+    _match(LPAREN); // (
+    if(curtoken.ttype != RPAREN)  //匹配参数列表,第1个子节点   
+    {
+        _param_list();   //生成参数列表        
+    }
+    _match(RPAREN); // )
+    _compound_stmt(&chain);//函数体，第2个子节点   
+    
+    return ;
+}
+// params → int ID { , int ID } | void | empty
+void _param_list() //生成参数列表
+{
+    int paddress;
+    while (curtoken.ttype!=RPAREN)//)
+    {         
+        switch (curtoken.ttype)
+        {
+        case INT:
+            _match(INT);
+            break;
+        case DOUBLE:
+            _match(DOUBLE);
+            break;
+        case FLOAT:
+            _match(FLOAT);
+            break;
+        case CHAR:
+            _match(CHAR);
+            break;
+        case VOID:
+            _match(VOID);
+            break;
+        case  COMMA: // 定义多个变量      
+            _match(COMMA);   
+            break;
+        case ID:            
+            if (lookupTable(curtoken.str,&paddress)!=0)
+            {
+                insertTable(curtoken.str,type[curtoken.ttype]);                
+            }            
+            break;
+        default:    
+            ParseError();       
+            break;
+        }
+    }
+    return ;
+}
+//compound-stmt→ { { var-declaration } { statement } }
+void _compound_stmt(int *chain) //函数体
+{    
+    _match(LBRACE); // {
+    if (curtoken.ttype==INT || curtoken.ttype==DOUBLE 
+        || curtoken.ttype==FLOAT| curtoken.ttype==CHAR)
+   {
+     _var_decl(); //函数体内变量声明
+   }
+    _statement(chain);      
+    while (curtoken.ttype!=RBRACE && curtoken.ttype!=ENDFILE)
+    {
+        _statement(chain);
+    }   
+    _match(RBRACE); // }    
+    return ;
+}
+//var-declaration→ int ID { , ID }    //可以声明多个变量
+void  _var_decl() 
+{    
+    int paddress;    
+    while(curtoken.ttype!=SEMI) // ; 变量声明语句结束 
+    { 
+        switch(curtoken.ttype) 
+        {
+        case INT:  
+            _match(INT);     
+            break;
+        case DOUBLE:  
+            _match(DOUBLE);  
+            break;
+        case FLOAT:  
+            _match(FLOAT);   
+            break;
+        case CHAR:  
+            _match(CHAR);    
+            break;
+        case ID:  
+            if (lookupTable(curtoken.str,&paddress)!=0)
+            {
+                insertTable(curtoken.str,type[curtoken.ttype]);                
+            }                
+            _match( ID);     
+            break;
+        case  COMMA: // 定义多个变量      
+            _match( COMMA);  
+            break;
+        default:    
+            ParseError();       
+            break;
+        }//end_wswitch
+    }// end_while
+    _match( SEMI);   
+    return  ;
+}
+//statement→ expression-stmt∣compound-stmt ∣if-stmt 
+//∣while-stmt | for-stmt | return-stmt 
+char * _statement(int *chain) //函数体内语句序列
+{
+    char * expNode,*ifNode,*whileNode,*forNode,*reNode;
+    char * stmtNode=NULL;
+    int paddress;    
+    switch(curtoken.ttype)
+    {
+    case ID: //变量
+    case NUMBER: //数字
+        if (lookupTable(curtoken.str,&paddress)!=0)
+        {
+            insertTable(curtoken.str,type[curtoken.ttype]);            
+        }
+        expNode=_exp_stmt(chain);     //表达式语句
+        stmtNode=expNode;
+        break;
+    case IF:
+        ifNode=_if_stmt(chain);        //if语句
+        stmtNode=ifNode;
+        break;
+    case WHILE:
+        whileNode=_while_stmt(chain);       //while语句 
+        stmtNode=whileNode;
+        break;
+    case FOR:
+        forNode=_for_stmt(chain);       //for语句
+        stmtNode=forNode;
+        break;
+    case RETURN:
+        reNode=_return_stmt(chain);       //return语句
+        stmtNode=reNode;
+        break;
+    case LBRACE://{
+        _compound_stmt(chain);       //函数体
+        break;
+    default:
+        ParseError();
+        break;
+    }//end-switch   
+    return stmtNode;
+}
+//if-stmt→ if( expression ) statement [else statement]
+char * _if_stmt(int *chain) //if语句
+{
+    char * ifNode=NULL,*expNode,*comNode;
+    char *result=newSpace();
+    char *num1=newSpace();
+    char *num2=newSpace();
+    char *op=newSpace();
+    _match(IF);
+    _match(LPAREN); // (    
+    expNode=_simple_expr(chain);//生成表达式节点
+    strcpy(num1,expNode);   
+    ntc=nextq; //记住if语句位置
+    emit("FJ","",num1,"/"); //按假跳转
+    _match(RPAREN); // )    
+    comNode=_statement(chain); //if语句体    
+    nfc=nextq;     
+    emit("RJ","","/","/");
+    backFill(ntc,nextq+1);  ////ntc链接的所有四元式都回填nextq
+    if (strcmp(curtoken.str,"else")==0) //如果包含else语句
+    {   
+        _match(ELSE);        
+        comNode=_statement(chain);
+    }         
+     backFill(nfc,nextq+1);  ////nfc链接的所有四元式都回填nextq
+    return num1;
+}
+//while-stmt→ while( expression ) statement
+char * _while_stmt(int *chain) //while语句
+{
+    char * whileNode=NULL,*expNode;    
+    _match(WHILE);
+    _match(LPAREN);// (    
+    while_s=nextq; //while条件的开始   
+    expNode=_simple_expr(chain);    
+    while_e=nextq; //while循环体的开始
+    emit("FJ","",expNode,"/");
+    _match(RPAREN); // )
+    _compound_stmt(chain);    
+    while_t=nextq;
+    emit("RJ","","/","/");
+    backFill(while_t,while_s+1);
+    backFill(while_e,nextq+1);
+    return whileNode;
+}
+//for-stmt→ for(expression;expression;expression) statement
+char * _for_stmt(int *chain) //for语句
+{
+    char * forNode=newSpace();
+    char *expNode,*comNode;
+    char *result=newSpace();
+    char *num1=newSpace();
+    char *num2=newSpace();
+    char *op=newSpace();
+    _match(FOR);    
+    _match(LPAREN); // (
+    expNode=_exp_stmt(chain);     
+    for_s=nextq; //记录for语句转化为if的开始位置
+    expNode=_exp_stmt(chain);   
+    emit("FJ","",expNode,"/");
+    expNode=_exp_stmt(chain);     
+    _match(RPAREN); // )
+    comNode=_statement(chain);
+    for_e=nextq;
+    emit("RJ","","/","/");
+    backFill(for_e,for_s+1);
+    backFill(for_s+1,nextq+1);
+    return forNode;
+}
+//return-stmt→ return [ expression ] ;
+char * _return_stmt(int *chain) //return语句
+{
+    char *expNode;    
+    _match(RETURN);
+    emit("RET"," "," "," ");
+    expNode=_exp_stmt(chain);
+    int qq=siyuanshi_index-1;
+    strcpy(siyuanshi[qq].oper1," ");    
+    return expNode;
+}
+//expression-stmt→ [ expression ] ;
+char * _exp_stmt(int *chain) //表达式语句
+{
+    char * expNode;
+    while(strcmp(curtoken.str,";")==0) //匹配空语句
+    {
+        _match(SEMI);
+    }
+    expNode=_express(chain);
+    if(curtoken.ttype==SEMI)
+    {
+        _match(SEMI);
+    }
+    if(curtoken.ttype == LPAREN)
+    {
+        _match(LPAREN);
+    }   
+    return expNode;
+}
+//expression→ ID = expression | simple-expression
+char * _express(int *chain) //具体表达式
+{    
+    char * newNode,*expNode;
+    int paddress; 
+    char *result=newSpace();
+    char *num1=newSpace();
+    char *num2=newSpace();
+    char *op=newSpace();    
+    if (curtoken.ttype==ID)
+    {
+        if (lookupTable(curtoken.str,&paddress)!=0)
+        {
+            insertTable(curtoken.str,type[curtoken.ttype]);   
+        }  
+        TokenType tem_tok=NextToken().ttype;
+        backToken();
+        if (tem_tok!=ASSIGN)
+        {             
+            strcpy(num1,curtoken.str);          
+        }
+        else
+        {
+            strcpy(result,curtoken.str); //结果
+        }
+
+        _match(ID);
+    }   
+    if (curtoken.ttype == ASSIGN)
+    {   
+         strcpy(op,"=");       
+        
+        _match(ASSIGN);
+        newNode=_simple_expr(chain);
+        strcpy(num1,newNode);
+        strcpy(num2,"/");
+        emit(op,num1,num2,result);
+    }
+    else
+    {        
+        int qq=siyuanshi_index;
+        expNode=_simple_expr(chain); 
+        
+        strcpy(siyuanshi[qq].oper1,num1);     
+    }     
+    return expNode;    
+}
+//simple-expression→ additive-expression [ relop additive-expression ]
+//relop → < | <= | > | >= | == | != 
+char * _simple_expr(int *chain) //简单表达式
+{
+    char *additiveNode;
+    char *result=newSpace();
+    char *num1=newSpace();
+    char *num2=newSpace();
+    char *op=newSpace();
+    
+    additiveNode=_additive_expr(chain); //生成算数表达式
+    strcpy(num1,additiveNode);
+    switch(curtoken.ttype)
+    {
+    case LT: //<        
+        strcpy(op,"<");
+        _match(curtoken.ttype);
+        additiveNode=_additive_expr(chain);
+        strcpy(num2,additiveNode);
+        strcpy(result,newTemp());//生成一个临时变量Tn赋给result
+        emit(op,num1,num2,result);
+        return result;
+        break;
+    case LTEQ:// <=                
+        strcpy(op,"<=");        
+        _match(curtoken.ttype);
+        additiveNode=_additive_expr(chain);
+        strcpy(num2,additiveNode);
+        strcpy(result,newTemp());
+        emit(op,num1,num2,result);
+        return result;
+        break;
+    case GT: // >
+        strcpy(op,">");        
+        _match(curtoken.ttype);
+        additiveNode=_additive_expr(chain);
+        strcpy(num2,additiveNode);
+        strcpy(result,newTemp());
+        emit(op,num1,num2,result);
+        return result;
+        break;
+    case GTEQ: // >=     
+        strcpy(op,">=");        
+        _match(curtoken.ttype);
+        additiveNode=_additive_expr(chain);
+        strcpy(num2,additiveNode);
+        strcpy(result,newTemp());
+        emit(op,num1,num2,result);
+        return result;
+        break;
+    case NEQ:// !=      
+        strcpy(op,"!=");        
+        _match(curtoken.ttype);
+        additiveNode=_additive_expr(chain);
+        strcpy(num2,additiveNode);
+        strcpy(result,newTemp());
+        emit(op,num1,num2,result);
+        return result;
+        break;
+    case EQ:// ==      
+        strcpy(op,"==");        
+        _match(curtoken.ttype);
+        additiveNode=_additive_expr(chain);
+        strcpy(num2,additiveNode);
+        strcpy(result,newTemp());
+        emit(op,num1,num2,result);
+        return result;
+        break;
+    }
+    return num1;
+}
+//additive-expression→ term [( + | - ) term ]
+char * _additive_expr(int *chain) //算术表达式
+{
+    char *termNode;
+    char *result=newSpace();
+    char *num1=newSpace();
+    char *num2=newSpace();
+    char *op=newSpace();
+    
+    termNode=_term(chain);
+    strcpy(num1,termNode);
+    if (curtoken.ttype==PLUS) 
+    {
+        strcpy(op,"+");        
+        _match(curtoken.ttype);
+        termNode=_term(chain);
+        strcpy(num2,termNode);
+        strcpy(result,newTemp());
+        emit(op,num1,num2,result);
+        return result;
+    } 
+    else if ( curtoken.ttype==MINUS)
+    {
+        strcpy(op,"-");        
+        _match(curtoken.ttype);
+        termNode=_term(chain);
+        strcpy(num2,termNode);
+        strcpy(result,newTemp());
+        emit(op,num1,num2,result);
+        return result;
+    }
+    return num1;
+}
+//term→ factor [ ( * | / ) factor ]
+char * _term(int *chain) //算术项
+{
+    char *factorNode;
+    char *result=newSpace();
+    char *num1=newSpace();
+    char *num2=newSpace();
+    char *op=newSpace();
+	
+    factorNode=_factor(chain);    
+    strcpy(num1,factorNode);   
+    if (curtoken.ttype == STAR)
+    {
+       strcpy(op,"*");       
+        _match(curtoken.ttype);
+        factorNode=_factor(chain);
+        strcpy(num2,factorNode);
+        strcpy(result,newTemp());
+        emit(op,num1,num2,result);         
+        return result;
+    } 
+    else if ( curtoken.ttype == SLASH)
+    {       
+        strcpy(op,"/");        
+        _match(curtoken.ttype);
+        factorNode=_factor(chain);
+        strcpy(num2,factorNode);
+        strcpy(result,newTemp()); 
+        emit(op,num1,num2,result);  
+        return result;
+    }   
+    return num1;
+}
+//factor→ ( expression )| ID | NUM
+char * _factor(int *chain) //算术项中的因子项
+{
+    
+    char * factorNode;
+    int paddress;
+    factorNode=newSpace();
+    switch(curtoken.ttype)
+    {
+    case LPAREN://(
+        _match(LPAREN);
+        factorNode=_simple_expr (chain);        
+        _match(RPAREN);//)
+        break;
+    case ID:        
+        if (lookupTable(curtoken.str,&paddress)!=0)
+        {
+            insertTable(curtoken.str,type[curtoken.ttype]);            
+        }             
+        strcpy(factorNode,curtoken.str);
+        _match(curtoken.ttype);
+        break;
+    case NUMBER:       
+        if (lookupTable(curtoken.str,&paddress)!=0)
+        {
+            insertTable(curtoken.str,type[curtoken.ttype]);            
+        }         
+        strcpy(factorNode,curtoken.str);
+        _match(curtoken.ttype);
+        break;  
+    }
+    return factorNode;
+}
+int _match(TokenType expected) //匹配当前单词类型,并且读取下一个
+{   
+    if(curtoken.ttype == expected) 
+    {
+        curtoken=NextToken();       
+        return 1;
+    }
+    else
+    {
+        ParseError();
+        return 0;
+    }
+}
+Token NextToken() //获取下一个token
+{
+    Token tok;
+    if (Table.index < Table.realNum)
+    {    
+        
+        tok=Table.list[Table.index];
+        Table.index++;       
+        return tok;
+    } 
+    else
+    {
+        tok.ttype=ENDFILE;        
+        return tok;
+    }
+}
+void asmcode() //生成汇编代码
+{
+	    fp1=fopen("D:\\AssemblyCode.asm","at+");
+    int i;
+    asmHead();
+
+    for (i=0;i<siyuanshi_index;i++)
+    {
+        int flag=0;         
+        if (atoi(siyuanshi[i].oper1)==siyuanshi_index)
+        {
+            strcpy(siyuanshi[i].oper1,"TheEnd"); //标记程序段的结束
+            flag=1;
+        }
+        if (strcmp(siyuanshi[i].op,"=")==0)
+        {
+            printf("L%d:mov AX,%1s\n",i+1,siyuanshi[i].oper1);
+            fprintf(fp1,"L%d:mov AX,%1s\n",i+1,siyuanshi[i].oper1);
+            printf("   mov %2s,Ax\n",siyuanshi[i].result);
+            fprintf(fp1,"   mov %2s,Ax\n",siyuanshi[i].result);
+        }
+        else if (strcmp(siyuanshi[i].op,"+")==0)
+        {
+            printf("L%d:mov AX,%1s\n",i+1,siyuanshi[i].oper1);
+            printf("   add Ax,%1s\n",siyuanshi[i].oper2);
+            printf("   mov %1s,Ax\n",siyuanshi[i].result);
+            
+            fprintf(fp1,"L%d:mov AX,%1s\n",i+1,siyuanshi[i].oper1);
+            fprintf(fp1,"   add Ax,%1s\n",siyuanshi[i].oper2);
+            fprintf(fp1,"   mov %1s,Ax\n",siyuanshi[i].result);
+        } 
+        else if(strcmp(siyuanshi[i].op,"-")==0)
+        {
+            printf("L%d:mov AX,%1s\n",i+1,siyuanshi[i].oper1);
+            printf("   sub Ax,%1s\n",siyuanshi[i].oper2);//sub被减数大进位相减
+            printf("   mov %1s,Ax\n",siyuanshi[i].result);
+            
+            fprintf(fp1,"L%d:mov AX,%1s\n",i+1,siyuanshi[i].oper1);
+            fprintf(fp1,"   sub Ax,%1s\n",siyuanshi[i].oper2);//sub被减数大进位相减
+            fprintf(fp1,"   mov %1s,Ax\n",siyuanshi[i].result);
+        }
+        else if (strcmp(siyuanshi[i].op,"*")==0)
+        {
+            printf("L%d:mov AX,%1s\n",i+1,siyuanshi[i].oper1);
+            printf("   mov BX,%1s\n",siyuanshi[i].oper2);
+            printf("   mul BX\n");
+            printf("   mov %1s,Ax\n",siyuanshi[i].result);
+            
+            fprintf(fp1,"L%d:mov AX,%1s\n",i+1,siyuanshi[i].oper1);
+            fprintf(fp1,"   mov BX,%1s\n",siyuanshi[i].oper2);
+            fprintf(fp1,"   mul BX\n");
+            fprintf(fp1,"   mov %1s,Ax\n",siyuanshi[i].result);
+        }
+        else if (strcmp(siyuanshi[i].op,"/")==0)
+        {
+            printf("L%d:mov AX,%1s\n",i+1,siyuanshi[i].oper1);
+            printf("   mov BX,%1s\n",siyuanshi[i].oper2);
+            printf("   div BX\n");
+            printf("   mov %1s,AL\n",siyuanshi[i].result);
+            
+            fprintf(fp1,"L%d:mov AX,%1s\n",i+1,siyuanshi[i].oper1);
+            fprintf(fp1,"   mov BX,%1s\n",siyuanshi[i].oper2);
+            fprintf(fp1,"   div BX\n");
+            fprintf(fp1,"   mov %1s,AL\n",siyuanshi[i].result);
+        }
+        else if (strcmp(siyuanshi[i].op,"FJ")==0)
+        {    
+            if (flag==1)
+            {
+                printf("L%d:jnc %1s\n",i+1,siyuanshi[i].oper1);//jnc无进位跳转
+                fprintf(fp1,"L%d:jnc %1s\n",i+1,siyuanshi[i].oper1);//jnc无进位跳转
+            }
+            else
+            {
+                printf("L%d:jnc L%1s\n",i+1,siyuanshi[i].oper1);
+                fprintf(fp1,"L%d:jnc L%1s\n",i+1,siyuanshi[i].oper1);
+            }
+            
+        }
+        else if (strcmp(siyuanshi[i].op,"RJ")==0)
+        {
+            if (flag==1)
+            {
+                printf("L%d:jmp %1s\n",i+1,siyuanshi[i].oper1);//jmp无条件跳转
+                fprintf(fp1,"L%d:jmp %1s\n",i+1,siyuanshi[i].oper1);//jmp无条件跳转
+            }
+            else
+            {
+                printf("L%d:jmp L%1s\n",i+1,siyuanshi[i].oper1);
+                fprintf(fp1,"L%d:jmp L%1s\n",i+1,siyuanshi[i].oper1);
+            }
+        }
+        else if (strcmp(siyuanshi[i].op,">")==0 ||strcmp(siyuanshi[i].op,">=")==0 
+            ||strcmp(siyuanshi[i].op,"<")==0 ||strcmp(siyuanshi[i].op,"<=")==0  )
+        {
+            printf("L%d:mov AX,%1s\n",i+1,siyuanshi[i].oper1);
+            printf("   sub Ax,%1s\n",siyuanshi[i].oper2);
+            
+            fprintf(fp1,"L%d:mov AX,%1s\n",i+1,siyuanshi[i].oper1);
+            fprintf(fp1,"   sub Ax,%1s\n",siyuanshi[i].oper2);
+        }      
+         
+    }
+    printf("TheEnd:nop\n\n");//空指令，空操作
+    fprintf(fp1,"TheEnd:nop\n\n");//空指令，空操作
+    
+    asmTail();
+    printf("\n");
+    fclose(fp1);
+
+}
+void asmHead() //打印汇编代码头部
+{
+    int i,j;
+    printf("\nassume cs:codesg,ds:datasg\n");
+    printf("datasg segment\n"); //划分数据段
+    
+    fprintf(fp1,"\nassume cs:codesg,ds:datasg\n");
+    fprintf(fp1,"datasg segment\n"); //划分数据段
+    
+    for (i=0;i<VarNum;i++) //为符号表中的变量分配空间
+    {
+        if (strcmp(vartable[i].type,"ID")==0)
+        {
+            printf("\t%s dw 0\n",vartable[i].name);
+            fprintf(fp1,"\t%s dw 0\n",vartable[i].name);
+        }
+    }
+    for (j=1;j<temp_index;j++)
+    {
+        printf("\t%s dw 0\n",TempTable[j]);
+        fprintf(fp1,"\t%s dw 0\n",TempTable[j]);
+    }
+    printf("datasg ends\n");
+    printf("codesg segment\n");
+    printf("start:\n");
+    
+    fprintf(fp1,"datasg ends\n");
+    fprintf(fp1,"codesg segment\n");
+    fprintf(fp1,"start:\n");
+    return;
+}
+void asmTail() //打印汇编代码尾部
+{
+   printf("mov ax,4c00h\n");
+   printf("int 21h\n");
+   printf("codesg ends\n");     
+   printf("end start\n");
+   
+   fprintf(fp1,"mov ax,4c00h\n");
+   fprintf(fp1,"int 21h\n");
+   fprintf(fp1,"codesg ends\n");     
+   fprintf(fp1,"end start\n");
+   return;
+}
+
+
+
+int main()
+{
+    //打印单词表
+    char *path="D:\\code.cpp";
+	int i=0;
+      printf("\n*******************词法分析部分*******************\n");
+
+    TokenAnalysis(path);
+	 printf("单词表：\n");
+    printf("\t序号\t单词\t类型\t行号\n");
+    for (i=0;i<Table.realNum;i++)
+    {
+		printf("\t%d\t%s\t%s\t %2d\n",
+            i+1,
+            Table.list[i].str,
+            type[ Table.list[i].ttype
+			],
+            Table.list[i].linenum);
+    }
+    putchar('\n');
+    printf("*****************语法分析：*****************************\n\n");
+    parse();
+    printf("*****************语义分析及中间代码生成*******************\n");
+    code();
+    system("pause");
+    return 0;
+}
